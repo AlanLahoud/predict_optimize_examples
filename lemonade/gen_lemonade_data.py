@@ -7,6 +7,7 @@ def create_features(N):
     # x2: rainfall intensity
     # x3: weekday
 
+    np.random.seed(1)
     x1 = np.random.normal(loc=20.0, scale=4.0, size=N)
 
     rainfall_intensity = [

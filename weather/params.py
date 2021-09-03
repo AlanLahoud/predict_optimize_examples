@@ -1,5 +1,5 @@
 #########################################################################
-##### Lemonade Stand problem Parameters# ################################
+##### Bad Weather problem Parameters# ###################################
 #########################################################################
 
 # Data params
@@ -8,6 +8,7 @@ train_perc = 0.8            # Percentage of data for training
 noise_factor = 0.2          # Add noise to label data (y): try 0 to 0.3
 
 # Optimization Prob params
-c0 = 10                     # Constant for the order cost
-c1 = 50                     # Constant for the shortage cost
-c2 = 30                     # Constant for the waste cost
+c11 = 10                     # Cost for the umbrella 
+c12 = 50                     # Cost for the rain and ~umbrella
+c21 = 30                     # Cost for the coat 
+c22 = 30                     # Cost for the cold and ~coat

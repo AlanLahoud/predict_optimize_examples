@@ -2,27 +2,20 @@ import pandas as pd
 import numpy as np
 import seaborn
 from matplotlib import pyplot as plt
-from tqdm import tqdm
 
 from multiprocessing import Process, Manager, Pool, cpu_count
 
 import sys
 sys.path.append('./../common_utils')
-import gen_lemonade_data
+import gen_weather_data
 import training
 import params
 
-# Import models
-from sklearn.linear_model import LinearRegression
-from sklearn.svm import SVR
-import lightgbm as lgb
-
 # Import metrics
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import f1_score
 
 # Import OP Solvers
 from pulp import LpProblem, LpStatus, lpSum, LpVariable, LpMinimize
-
 
 
 # Data params
@@ -31,91 +24,71 @@ train_perc = params.train_perc
 noise_factor = params.noise_factor
 
 # Optimization Problem params
-c0 = params.c0
-c1 = params.c1
-c2 = params.c2
+c11 = params.c11
+c12 = params.c12
+c21 = params.c21
+c22 = params.c22
 
-def cost_function_1(y, z):
-    return z*(c0 - c1) + c1*y
 
-def cost_function_2(y, z):
-    return z*(c0 + c2) - c2*y
-
-def cost_function(y, z):
-    if y-z >= 0:
-        return cost_function_1(y, z)
-    else:
-        return cost_function_2(y, z)
+def cost_function(y1, y2, z1, z2):
+    cost_rain = z1*(c11 - c12*y1) + c12*y1
+    cost_temp = z2*(c21 - c22*y2) + c22*y2
+    return cost_rain + cost_temp
     
-def cost_function_list(y_list, z_list):
+def cost_function_list(y1_list, y2_list, z1_list, z2_list):
     cost_list = []
-    for y, z in zip(y_list, z_list):
-        cost_list.append(cost_function(y, z))
+    for y1, y2, z1, z2 in zip(y1_list, y2_list, z1_list, z2_list):
+        cost_list.append(cost_function(y1, y2, z1, z2))
     return cost_list
-        
-def SolOpt_1(y):
-    t_Model = LpProblem(name="small-problem", sense=LpMinimize)
-    z = LpVariable(name="z", lowBound=0)
 
-    t_Model+=(y-z>=0,"cstr1")
-    t_Model+=(z>=0,"cstr2")
+def SolOpt(y1, y2, i):
     
-    obj_func = cost_function_1(y, z)
+    y1 = int(y1)
+    y2 = int(y2)
+
+    t_Model = LpProblem(name="weather-problem", sense=LpMinimize)
+    z1 = LpVariable(name="z1", cat='Binary')
+    z2 = LpVariable(name="z2", cat='Binary')
+    
+    t_Model+=(z1+z2<=1,"cstr1")
+    
+    obj_func = cost_function(y1, y2, z1, z2)
     t_Model += obj_func
     status = t_Model.solve()
     var=t_Model.variables()
-    return var[0].value(),t_Model.objective.value()
-
-
-def SolOpt_2(y):
-    t_Model = LpProblem(name="small-problem", sense=LpMinimize)
-    z = LpVariable(name="z", lowBound=0)
-
-    t_Model+=(z-y>=0,"cstr1")
-    t_Model+=(z>=0,"cstr2")
     
-    obj_func = cost_function_2(y, z)
-    t_Model += obj_func
-    status = t_Model.solve()
-    var=t_Model.variables()
-    return var[0].value(),t_Model.objective.value()
+    z1opt = var[0].value() 
+    z2opt = var[1].value() 
 
-def SolOpt(y, i):
-    Result_1 = SolOpt_1(y)
-    Result_2 = SolOpt_2(y)
-    
-    if Result_1[1] < Result_2[1]:
-        Result = Result_1
-    else:
-        Result = Result_2
-    
-    return i, Result[0]
-    
+    return i, z1opt, z2opt
+
 
 def run_solver(data_test, model_type, results):
     
-    #pbar = None
-    #pbar = tqdm(total=len(data_test))
     
     def collect_result(result):
         results.append(result)
-        #pbar.update()
     
-    y_col = 'y'
-    z_col = 'z_opt_from_y'  
+    y1_col = 'y1'
+    y2_col = 'y2'
+    z1_col = 'z1_opt_from_y'  
+    z2_col = 'z2_opt_from_y'  
     if model_type != 'real':
-        y_col = 'y_pred_{}'.format(model_type)
-        z_col = 'z_opt_from_y_pred_{}'.format(model_type)
+        y1_col = 'y1_pred_{}'.format(model_type)
+        y2_col = 'y2_pred_{}'.format(model_type)
+        z1_col = 'z1_opt_from_y_pred_{}'.format(model_type)
+        z2_col = 'z2_opt_from_y_pred_{}'.format(model_type)
 
 
     pool = Pool(cpu_count())
     for i in range(0, len(data_test)):
-        pool.apply_async(SolOpt, args=(data_test[y_col].iloc[i], i), callback=collect_result)
+        y1, y2 = data_test[y1_col].iloc[i], data_test[y2_col].iloc[i]
+        pool.apply_async(SolOpt, args=(y1, y2, i), callback=collect_result)
     pool.close()
     pool.join()
     
     df_solver = pd.DataFrame(
-        data = results, columns = ['ind', z_col]
+        data = results, columns = ['ind', z1_col, z2_col]
                 ).set_index('ind')
 
     data_test = pd.concat([data_test, df_solver], axis = 1)
@@ -124,14 +97,13 @@ def run_solver(data_test, model_type, results):
 
 
 
-
 def main():
-    
+
     #########################################################################
     ##### Generate data for lemonade problem ################################
     #########################################################################
 
-    data_lemonade = gen_lemonade_data.generate_lemonade_dataset(
+    data_weather = gen_weather_data.generate_weather_dataset(
         N = N, noise_factor = noise_factor)
 
     Ntr = int(train_perc*N)
@@ -140,16 +112,15 @@ def main():
     print('Data training size:', Ntr)
     print('Data test size:    ', Nte)
     print('Total size:        ', N)
-    
+
     print('\nNoise factor: ',noise_factor)
     suffix_noise = '_noise_' + str(noise_factor).zfill(2).replace('.','')
 
-    data_train = data_lemonade.iloc[:Ntr, :].reset_index(drop=True).copy()
-    data_test = data_lemonade.iloc[Ntr:, :].reset_index(drop=True).copy()
+    data_train = data_weather.iloc[:Ntr, :].reset_index(drop=True).copy()
+    data_test = data_weather.iloc[Ntr:, :].reset_index(drop=True).copy()
 
-    feat_cols = ['x1','x2','x3']
-    target_col = ['y']
-
+    feat_cols = ['x1','x2','x3','x4']
+    target_col = ['y1','y2']
 
 
     #########################################################################
@@ -161,31 +132,36 @@ def main():
         'C':1000
     }
 
+
     # Hyperparams for LGB
     params_lgb = {
-        'objective':'regression',
+        'objective':'binary',
         'boosting_type': 'gbdt',
         'learning_rate': 0.02,
         'max_depth':5,
         'num_leaves':7,
-        'verbosity':-1 
+        'verbosity':1 
     }
 
 
 
     #########################################################################
-    ##### Train: linear, SVM and LGB regressors #############################
+    ##### Train: LogReg, SVM and LGB regressors #############################
     #########################################################################
 
-    mdl_lin = training.train_linear(
+    mdl_log = training.train_logistic(
         X_tr=data_train[feat_cols], y_tr=data_train[target_col])
 
-    mdl_svm = training.train_svm(
+    mdl_svm = training.train_svm_class(
         X_tr=data_train[feat_cols], y_tr=data_train[target_col], 
         params=params_svm)
 
-    mdl_gbm = training.train_lgb(
-        X_tr=data_train[feat_cols], y_tr=data_train[target_col], 
+    mdl_lgb_1 = training.train_lgb(
+        X_tr=data_train[feat_cols], y_tr=data_train[target_col[0]], 
+        params=params_lgb)
+
+    mdl_lgb_2 = training.train_lgb(
+        X_tr=data_train[feat_cols], y_tr=data_train[target_col[1]], 
         params=params_lgb)
 
 
@@ -194,26 +170,27 @@ def main():
     ##### Predict test data: linear, SVM and LGB regressors #################
     #########################################################################
 
-    print('\nSeparated approach: Training process (Linear, SVM and LGBM models)')
-    
-    data_test.loc[:,'y_pred_lin'] = mdl_lin.predict(data_test[feat_cols])
-    data_test.loc[:,'y_pred_svm'] = mdl_svm.predict(data_test[feat_cols])
-    data_test.loc[:,'y_pred_gbm'] = mdl_gbm.predict(data_test[feat_cols])
+    data_test.loc[:,['y1_pred_lin','y2_pred_lin']] = mdl_log.predict(data_test[feat_cols])
+    data_test.loc[:,['y1_pred_svm','y2_pred_svm']] = mdl_svm.predict(data_test[feat_cols])
+    data_test.loc[:,'y1_pred_gbm'] = mdl_lgb_1.predict(data_test[feat_cols])
+    data_test.loc[:,'y1_pred_gbm'] = np.where(data_test.loc[:,'y1_pred_gbm']>0.5, 1, 0)
+    data_test.loc[:,'y2_pred_gbm'] = mdl_lgb_2.predict(data_test[feat_cols])
+    data_test.loc[:,'y2_pred_gbm'] = np.where(data_test.loc[:,'y2_pred_gbm']>0.5, 1, 0)
 
-    mse_lin = mean_squared_error(y_true=data_test['y'], 
-                                 y_pred=data_test['y_pred_lin'])
 
-    mse_svm = mean_squared_error(y_true=data_test['y'], 
-                                 y_pred=data_test['y_pred_svm'])
+    f1_lin = (f1_score(data_test['y1'], data_test['y1_pred_lin']),
+              f1_score(data_test['y2'], data_test['y2_pred_lin']))
 
-    mdl_gbm = mean_squared_error(y_true=data_test['y'], 
-                                 y_pred=data_test['y_pred_gbm'])
+    f1_svm = (f1_score(data_test['y1'], data_test['y1_pred_svm']),
+              f1_score(data_test['y2'], data_test['y2_pred_svm']))
+
+    f1_lgb = (f1_score(data_test['y1'], data_test['y1_pred_gbm']),
+              f1_score(data_test['y2'], data_test['y2_pred_gbm']))
 
     print('----------Results MSE ------------------')
-    print('MSE using linear model:', mse_lin)
-    print('MSE using SVM regressor:', mse_svm)
-    print('MSE using LGBM regressor:', mdl_gbm)
-
+    print('F1 using linear classifier:', f1_lin)
+    print('F1 using SVM classifier:', f1_svm)
+    print('F1 using LGBM classifier:', f1_lgb)
 
 
     #########################################################################
@@ -230,24 +207,28 @@ def main():
             mdl_str = mdl_str + ' y predictions'
         else:
             mdl_str = mdl_str + ' y'
-            
+
         print('Run solver using', mdl_str)
         data_test = run_solver(data_test, model_type=mdl_type, results=results)
 
-    
+
     mdl_types = ['real','lin','svm','gbm']
     for mdl_type in mdl_types:
-        y_col = 'y'
-        z_col = 'z_opt_from_y'
+        y1_col = 'y1'
+        y2_col = 'y2'
+        z1_col = 'z1_opt_from_y'
+        z2_col = 'z2_opt_from_y'
         f_col = 'f_opt_from_y'
         if mdl_type!='real':
-            z_col = 'z_opt_from_y_pred_{}'.format(mdl_type)
+            z1_col = 'z1_opt_from_y_pred_{}'.format(mdl_type)
+            z2_col = 'z2_opt_from_y_pred_{}'.format(mdl_type)
             f_col = 'f_opt_from_y_pred_{}'.format(mdl_type)
 
         data_test.loc[:, f_col] = cost_function_list(
-            y_list = data_test.loc[:,y_col], 
-            z_list = data_test.loc[:,z_col])
-
+            y1_list = data_test.loc[:,y1_col],
+            y2_list = data_test.loc[:,y2_col],
+            z1_list = data_test.loc[:,z1_col],
+            z2_list = data_test.loc[:,z2_col])
 
 
     #########################################################################
@@ -267,27 +248,19 @@ def main():
     ax.set_xticklabels(['Linear','SVM','LGBM','Real Y'])
     ax.set_xlabel('Model for predictions')
     ax.set_ylabel('Objective Function f')
-    fig.savefig('fig_lemonade_result' + suffix_noise +'.png')
+    fig.savefig('fig_weather_result' + suffix_noise +'.png')
 
     df_result = pd.concat([
                 data_test[fobj_cols].mean(),
                 data_test[fobj_cols].median()], axis=1)
     df_result.columns = ['average_cost','median_cost']
-    
+
     print('----------Results Obj Function----------')
     print(df_result)
     df_result.to_csv(
-        'lemonade_results' + suffix_noise +'.csv', index=False)
-
+        'weather_results' + suffix_noise +'.csv', index=False)
+    
+    
     
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-

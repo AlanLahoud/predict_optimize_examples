@@ -43,8 +43,9 @@ def create_features(N):
     X = np.stack((x1, x2, x3), axis=1)
     return X
     
+    
 
-def calculate_real_demand(x):
+def generate_real_demand(x, noise_factor):
 
     # Calculate rain factor
     rain_factor = 1.0
@@ -70,13 +71,21 @@ def calculate_real_demand(x):
         
     # Generate real demand
     y = ((50 + 10*x[0])*rain_factor*weekdays_factor).clip(min = 0)
+    
+    # Add gaussian noise to real demand
+    noise_y = np.random.normal(0, noise_factor*y.mean())
+    y = (y + noise_y).clip(min = 0)
+    
     return y
 
-def generate_lemonade_dataset(N):
+
+
+def generate_lemonade_dataset(N, noise_factor):
     X = create_features(N=N)
-    y = np.apply_along_axis(func1d = calculate_real_demand, 
-                            axis = 1,
-                            arr = X)
+    
+    y = np.apply_along_axis(func1d = generate_real_demand, 
+                            axis = 1, arr = X, 
+                            noise_factor=noise_factor)
     data = pd.DataFrame(np.column_stack((X,y)), columns=['x1','x2','x3','y'])
     
     return data

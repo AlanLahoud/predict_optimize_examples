@@ -273,6 +273,7 @@ def main():
                 data_test[fobj_cols].mean(),
                 data_test[fobj_cols].median()], axis=1)
     df_result.columns = ['average_cost','median_cost']
+    df_result.loc[:,'model'] = fobj_cols
     
     print('----------Results Obj Function----------')
     print(df_result)
@@ -282,12 +283,4 @@ def main():
     
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
 

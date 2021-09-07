@@ -23,7 +23,8 @@ def train_svm(X_tr, y_tr, params):
     return mdl_svm
 
 def train_svm_class(X_tr, y_tr, params):
-    mdl_svm = MultiOutputClassifier(estimator= SVC(C = params['C']))
+    mdl_svm = MultiOutputClassifier(
+        estimator= SVC(C = params['C'], probability=True))
     mdl_svm.fit(X_tr, y_tr)
     return mdl_svm
 
@@ -38,7 +39,7 @@ def train_lgb(X_tr, y_tr, params):
                         train_data_lgb,
                         num_boost_round=2000,
                         callbacks=[lgb.early_stopping(
-                            stopping_rounds = 100, verbose=5)],
+                            stopping_rounds = 100, verbose=False)],
                         valid_sets = [val_data_lgb, train_data_lgb],
                         valid_names = ['VA', 'TR'],
                         verbose_eval = -1)

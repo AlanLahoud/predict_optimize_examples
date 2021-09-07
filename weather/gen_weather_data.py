@@ -35,6 +35,7 @@ def generate_real_weather(X, noise_factor):
 def generate_weather_dataset(N, noise_factor):
     X = create_features(N=N) 
     Y = generate_real_weather(X, noise_factor=noise_factor)
-    data = pd.DataFrame(np.column_stack((X,Y)), columns=['x1','x2','x3','x4','y1','y2'])
+    data = pd.DataFrame(np.column_stack((X,Y)), 
+                        columns=['x1','x2','x3','x4','y1','y2'])
     
     return data

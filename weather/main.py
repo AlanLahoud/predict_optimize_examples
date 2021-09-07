@@ -12,7 +12,7 @@ import training
 import params
 
 # Import metrics
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, mean_squared_error
 
 # Import OP Solvers
 from pulp import LpProblem, LpStatus, lpSum, LpVariable, LpMinimize
@@ -42,9 +42,6 @@ def cost_function_list(y1_list, y2_list, z1_list, z2_list):
     return cost_list
 
 def SolOpt(y1, y2, i):
-    
-    y1 = int(y1)
-    y2 = int(y2)
 
     t_Model = LpProblem(name="weather-problem", sense=LpMinimize)
     z1 = LpVariable(name="z1", cat='Binary')
@@ -63,8 +60,7 @@ def SolOpt(y1, y2, i):
     return i, z1opt, z2opt
 
 
-def run_solver(data_test, model_type, results):
-    
+def run_solver(data_test, model_type, bool_type, results):
     
     def collect_result(result):
         results.append(result)
@@ -78,7 +74,11 @@ def run_solver(data_test, model_type, results):
         y2_col = 'y2_pred_{}'.format(model_type)
         z1_col = 'z1_opt_from_y_pred_{}'.format(model_type)
         z2_col = 'z2_opt_from_y_pred_{}'.format(model_type)
-
+        if bool_type:
+            y1_col = y1_col + '_bool'
+            y2_col = y2_col + '_bool'
+            z1_col = z1_col + '_bool'
+            z2_col = z2_col + '_bool'
 
     pool = Pool(cpu_count())
     for i in range(0, len(data_test)):
@@ -96,9 +96,9 @@ def run_solver(data_test, model_type, results):
     return data_test
 
 
-
 def main():
 
+    
     #########################################################################
     ##### Generate data for lemonade problem ################################
     #########################################################################
@@ -122,6 +122,7 @@ def main():
     feat_cols = ['x1','x2','x3','x4']
     target_col = ['y1','y2']
 
+    
 
     #########################################################################
     ##### Set hyperparams for models ########################################
@@ -140,13 +141,13 @@ def main():
         'learning_rate': 0.02,
         'max_depth':5,
         'num_leaves':7,
-        'verbosity':1 
+        'verbosity':-1 
     }
 
 
 
     #########################################################################
-    ##### Train: LogReg, SVM and LGB regressors #############################
+    ##### Train: LogReg, SVM and LGB classifiers ############################
     #########################################################################
 
     mdl_log = training.train_logistic(
@@ -165,101 +166,145 @@ def main():
         params=params_lgb)
 
 
+    data_test.loc[:,['y1_pred_lin','y2_pred_lin']] = np.array(
+        mdl_log.predict_proba(data_test[feat_cols]))[:,:,1].T
 
-    #########################################################################
-    ##### Predict test data: linear, SVM and LGB regressors #################
-    #########################################################################
+    data_test.loc[:,['y1_pred_svm','y2_pred_svm']] = np.array(
+        mdl_svm.predict_proba(data_test[feat_cols]))[:,:,1].T
 
-    data_test.loc[:,['y1_pred_lin','y2_pred_lin']] = mdl_log.predict(data_test[feat_cols])
-    data_test.loc[:,['y1_pred_svm','y2_pred_svm']] = mdl_svm.predict(data_test[feat_cols])
-    data_test.loc[:,'y1_pred_gbm'] = mdl_lgb_1.predict(data_test[feat_cols])
-    data_test.loc[:,'y1_pred_gbm'] = np.where(data_test.loc[:,'y1_pred_gbm']>0.5, 1, 0)
-    data_test.loc[:,'y2_pred_gbm'] = mdl_lgb_2.predict(data_test[feat_cols])
-    data_test.loc[:,'y2_pred_gbm'] = np.where(data_test.loc[:,'y2_pred_gbm']>0.5, 1, 0)
+    data_test.loc[:,'y1_pred_lgb'] = mdl_lgb_1.predict(data_test[feat_cols])
+    data_test.loc[:,'y2_pred_lgb'] = mdl_lgb_2.predict(data_test[feat_cols])
+
+    preds_col = [c for c in data_test.columns.tolist() if '_pred' in c]
+    for c in preds_col:
+        data_test.loc[:, c+'_bool'] = np.where(data_test.loc[:,c]>0.5, 1, 0)
+
+    f1_lin = (f1_score(data_test['y1'], data_test['y1_pred_lin_bool']).round(3),
+              f1_score(data_test['y2'], data_test['y2_pred_lin_bool']).round(3))
+
+    f1_svm = (f1_score(data_test['y1'], data_test['y1_pred_svm_bool']).round(3),
+              f1_score(data_test['y2'], data_test['y2_pred_svm_bool']).round(3))
+
+    f1_lgb = (f1_score(data_test['y1'], data_test['y1_pred_lgb_bool']).round(3),
+              f1_score(data_test['y2'], data_test['y2_pred_lgb_bool']).round(3))
 
 
-    f1_lin = (f1_score(data_test['y1'], data_test['y1_pred_lin']),
-              f1_score(data_test['y2'], data_test['y2_pred_lin']))
+    mse_lin = (mean_squared_error(
+              y_true=data_test['y1'], y_pred=data_test['y1_pred_lin']).round(3),
+               mean_squared_error(
+              y_true=data_test['y2'], y_pred=data_test['y2_pred_lin']).round(3))
 
-    f1_svm = (f1_score(data_test['y1'], data_test['y1_pred_svm']),
-              f1_score(data_test['y2'], data_test['y2_pred_svm']))
+    mse_svm = (mean_squared_error(
+              y_true=data_test['y1'], y_pred=data_test['y1_pred_svm']).round(3),
+               mean_squared_error(
+              y_true=data_test['y2'], y_pred=data_test['y2_pred_svm']).round(3))
 
-    f1_lgb = (f1_score(data_test['y1'], data_test['y1_pred_gbm']),
-              f1_score(data_test['y2'], data_test['y2_pred_gbm']))
+    mse_lgb = (mean_squared_error(
+              y_true=data_test['y1'], y_pred=data_test['y1_pred_lgb']).round(3),
+               mean_squared_error(
+              y_true=data_test['y2'], y_pred=data_test['y2_pred_lgb']).round(3))
 
-    print('----------Results MSE ------------------')
-    print('F1 using linear classifier:', f1_lin)
-    print('F1 using SVM classifier:', f1_svm)
-    print('F1 using LGBM classifier:', f1_lgb)
+
+    print('--------------------Results F1 -----------------------')
+    print('F1 using linear classifier (binary):', 
+          '\tRain:', f1_lin[0], '\tCold:', f1_lin[1])
+    print('F1 using SVM classifier (binary):', 
+          '\tRain:', f1_svm[0], '\tCold:', f1_svm[1])
+    print('F1 using LGBM classifier (binary):', 
+          '\tRain:', f1_lgb[0], '\tCold:', f1_lgb[1])
+
+    print('--------------------Results Brier Score --------------')
+    print('Brier using linear classifier (proba):', 
+          '\tRain:', mse_lin[0], '\tCold:', mse_lin[1])
+    print('Brier using SVM classifier (proba):', 
+          '\tRain:', mse_svm[0], '\tCold:', mse_svm[1])
+    print('Brier using LGBM classifier (proba):', 
+          '\tRain:', mse_lgb[0], '\tCold:', mse_lgb[1])
 
 
     #########################################################################
     ##### Run solver and compute cost functions based on decisions ##########
     #########################################################################
 
-
     print('\nSeparated approach: Math solver using real and predicted Y')
-    mdl_types = ['lin','svm','gbm','real']
+    mdl_types = ['lin','svm','lgb','real']
     for mdl_type in mdl_types:
-        results = []
+
         mdl_str = mdl_type
         if mdl_type != 'real':
             mdl_str = mdl_str + ' y predictions'
+            results = []
+            print('Run solver using', mdl_str)
+            data_test = run_solver(
+                data_test, model_type=mdl_type, bool_type=False, results=results)
+
+            results = []
+            data_test = run_solver(
+                data_test, model_type=mdl_type, bool_type=True, results=results)
+
         else:
-            mdl_str = mdl_str + ' y'
+            results = []
+            print('Run solver using actual y') 
+            data_test = run_solver(
+                data_test, model_type=mdl_type, bool_type=False, results=results)
 
-        print('Run solver using', mdl_str)
-        data_test = run_solver(data_test, model_type=mdl_type, results=results)
 
 
-    mdl_types = ['real','lin','svm','gbm']
-    for mdl_type in mdl_types:
-        y1_col = 'y1'
-        y2_col = 'y2'
-        z1_col = 'z1_opt_from_y'
-        z2_col = 'z2_opt_from_y'
-        f_col = 'f_opt_from_y'
-        if mdl_type!='real':
-            z1_col = 'z1_opt_from_y_pred_{}'.format(mdl_type)
-            z2_col = 'z2_opt_from_y_pred_{}'.format(mdl_type)
-            f_col = 'f_opt_from_y_pred_{}'.format(mdl_type)
+    z1_cols = [c for c in data_test.columns.tolist() if 'z1_opt_from_y' in c]
+    z2_cols = [c for c in data_test.columns.tolist() if 'z2_opt_from_y' in c]
 
+    f_cols = [c.replace('z1_','f_') for c in data_test.columns.tolist() if 'z1_opt_from_y' in c]
+    f_cols_proba = [c for c in f_cols if 'pred' in c and 'bool' not in c]
+    f_cols_bool = [c for c in f_cols if 'pred' in c and 'bool' in c]
+
+    for z1_col, z2_col, f_col in zip(z1_cols, z2_cols, f_cols):
         data_test.loc[:, f_col] = cost_function_list(
-            y1_list = data_test.loc[:,y1_col],
-            y2_list = data_test.loc[:,y2_col],
+            y1_list = data_test.loc[:,'y1'],
+            y2_list = data_test.loc[:,'y2'],
             z1_list = data_test.loc[:,z1_col],
             z2_list = data_test.loc[:,z2_col])
 
 
     #########################################################################
-    ##### Run solver and compute cost functions based on decisions ##########
-    #########################################################################    
+    ##### Extract the resuts ################################################
+    #########################################################################     
 
-    fobj_cols =   ['f_opt_from_y_pred_lin',
-                   'f_opt_from_y_pred_svm',
-                   'f_opt_from_y_pred_gbm',
-                   'f_opt_from_y']  
-
-    fig, ax = plt.subplots(figsize=(9, 5), dpi=120)
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(10, 10), dpi=120, sharey=True)
+    plt.subplots_adjust(top = 0.92, bottom=0.05, hspace=0.3, wspace=0.1)
     fig.suptitle('OBJECTIVE FUNCTION DISTRIBUTION x MODEL COMPLEXITY')
-    ax = seaborn.violinplot(
-        data=data_test[fobj_cols])
 
-    ax.set_xticklabels(['Linear','SVM','LGBM','Real Y'])
-    ax.set_xlabel('Model for predictions')
-    ax.set_ylabel('Objective Function f')
+    seaborn.violinplot(
+        data=data_test[f_cols_bool + ['f_opt_from_y']], ax=ax1)
+    ax1.set_title('Prediction Y as binary value - \
+    Does not consider uncertainty of prediction in the OP')
+    ax1.set_xticklabels(
+        ['Linear Binary','SVM Binary','LGBM Binary', 'Real Y'])
+    ax1.set_xlabel('Model for predictions')
+    ax1.set_ylabel('Objective Function f')
+
+    ax2 = seaborn.violinplot(
+        data=data_test[f_cols_proba + ['f_opt_from_y']], ax=ax2)
+    ax2.set_title('Prediction Y as binary value - \
+    Does consider uncertainty of prediction in the OP')
+    ax2.set_xticklabels(
+        ['Linear Uncert','SVM Uncert','LGBM Uncert', 'Real Y'])
+    ax2.set_xlabel('Model for predictions')
+    ax2.set_ylabel('Objective Function f')
+
+
     fig.savefig('fig_weather_result' + suffix_noise +'.png')
 
     df_result = pd.concat([
-                data_test[fobj_cols].mean(),
-                data_test[fobj_cols].median()], axis=1)
+                data_test[f_cols].mean(),
+                data_test[f_cols].median()], axis=1)
     df_result.columns = ['average_cost','median_cost']
+    df_result.loc[:,'model'] = f_cols
 
     print('----------Results Obj Function----------')
     print(df_result)
     df_result.to_csv(
         'weather_results' + suffix_noise +'.csv', index=False)
-    
     
     
 if __name__ == "__main__":

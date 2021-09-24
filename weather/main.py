@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
-import seaborn
+import seaborn as sns
+sns.set_theme(style="whitegrid")
 from matplotlib import pyplot as plt
 
 from multiprocessing import Process, Manager, Pool, cpu_count
@@ -100,7 +101,7 @@ def main():
 
     
     #########################################################################
-    ##### Generate data for lemonade problem ################################
+    ##### Generate data for weather problem #################################
     #########################################################################
 
     data_weather = gen_weather_data.generate_weather_dataset(
@@ -269,31 +270,31 @@ def main():
     ##### Extract the resuts ################################################
     #########################################################################     
 
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1, figsize=(10, 10), dpi=120, sharey=True)
-    plt.subplots_adjust(top = 0.92, bottom=0.05, hspace=0.3, wspace=0.1)
-    fig.suptitle('OBJECTIVE FUNCTION DISTRIBUTION x MODEL COMPLEXITY')
+    cmodels = 'cornflowerblue'
+    ctruth = 'seagreen'
 
-    seaborn.violinplot(
-        data=data_test[f_cols_bool + ['f_opt_from_y']], ax=ax1)
-    ax1.set_title('Prediction Y as binary value - \
-    Does not consider uncertainty of prediction in the OP')
-    ax1.set_xticklabels(
-        ['Linear Binary','SVM Binary','LGBM Binary', 'Real Y'])
-    ax1.set_xlabel('Model for predictions')
-    ax1.set_ylabel('Objective Function f')
-
-    ax2 = seaborn.violinplot(
-        data=data_test[f_cols_proba + ['f_opt_from_y']], ax=ax2)
-    ax2.set_title('Prediction Y as binary value - \
-    Does consider uncertainty of prediction in the OP')
-    ax2.set_xticklabels(
-        ['Linear Uncert','SVM Uncert','LGBM Uncert', 'Real Y'])
-    ax2.set_xlabel('Model for predictions')
-    ax2.set_ylabel('Objective Function f')
-
-
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=120)
+    sns.violinplot(
+        data=data_test[f_cols_bool + ['f_opt_from_y']], ax=ax,
+        palette=[cmodels,cmodels,cmodels,ctruth])
+    ax.set_xticklabels(
+        ['Linear','SVM','LGBM', 'Ground truth'])
+    ax.set_xlabel('Model for predictions')
+    ax.set_ylabel('Objective Function f')
+    ax.set_ylim([-50, 350])
     fig.savefig('fig_weather_result' + suffix_noise +'.png')
+
+
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=120)
+    sns.violinplot(
+        data=data_test[f_cols_proba + ['f_opt_from_y']], ax=ax,
+        palette=[cmodels,cmodels,cmodels,ctruth])
+    ax.set_xticklabels(
+        ['Linear','SVM','LGBM', 'Ground truth'])
+    ax.set_xlabel('Model for predictions')
+    ax.set_ylabel('Objective Function')
+    ax.set_ylim([-50, 350])
+    fig.savefig('fig_weather_result_proba' + suffix_noise +'.png')
 
     df_result = pd.concat([
                 data_test[f_cols].mean(),

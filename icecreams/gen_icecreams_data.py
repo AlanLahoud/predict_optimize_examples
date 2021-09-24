@@ -22,11 +22,11 @@ def create_features(N):
 def generate_real_demand_icecreams(X, noise_factor):
 
     y1 = (100 + 0.5*X[:,0]**2 - 10*X[:,1] + 4000*X[:,2]**2 - 2000*X[:,3]**2)
-    noise_y1 = np.random.normal(0, noise_factor*y1.std(), size = len(y1))
+    noise_y1 = np.random.normal(0, 20*noise_factor*y1.std(), size = len(y1))
     y1 = (y1 + noise_y1).clip(min = 0)
 
     y2 = (200 + 0.3*X[:,0]**2 - 10*X[:,1] - 2000*X[:,2]**2 + 4000*X[:,3]**2)
-    noise_y2 = np.random.normal(0, noise_factor*y2.std(), size = len(y2))
+    noise_y2 = np.random.normal(0, 20*noise_factor*y2.std(), size = len(y2))
     y2 = (y2 + noise_y2).clip(min = 0)
     
     Y = np.stack((y1, y2), axis=1)

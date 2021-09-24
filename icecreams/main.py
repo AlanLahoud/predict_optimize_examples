@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
-import seaborn
+import seaborn as sns
+sns.set_theme(style="whitegrid")
 from matplotlib import pyplot as plt
 
 from multiprocessing import Process, Manager, Pool, cpu_count
@@ -225,19 +226,19 @@ def main():
     ##### Extract the resuts ################################################
     #########################################################################     
 
-    fobj_cols = ['f_opt_decisions','f_zero_discount']
+    data_results = data_results.rename(
+        columns = {'f_opt_decisions':'Opt discounts', 'f_zero_discount':'Zero discounts'})
 
-    fig, ax = plt.subplots(figsize=(10, 6), dpi=120)
-    fig.suptitle('OBJECTIVE FUNCTION DISTRIBUTION x MODEL COMPLEXITY')
+    fobj_cols = ['Opt discounts','Zero discounts']
 
-    seaborn.violinplot(
-        data=data_results[fobj_cols], ax=ax)
-    ax.set_xticklabels(
-        ['Linear Y','Zero discount'])
-    ax.set_xlabel('Model for predictions')
-    ax.set_ylabel('Objective Function f')
+    ax = sns.displot(data_results[fobj_cols], kind="kde", fill=True, height=6, aspect=12/6, legend=True)
+    ax.set_xlabels('Objective Function (Revenue)')
 
-    fig.savefig('icecream_result' + suffix_noise +'.png')
+    plt.xlim([0, 10000])
+    plt.ylim([0, 0.0007])
+
+
+    ax.savefig('icecream_result' + suffix_noise +'.png')
 
     df_result = pd.concat([
                 data_results[fobj_cols].mean(),

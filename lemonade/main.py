@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
-import seaborn
+import seaborn as sns
+sns.set_theme(style="whitegrid")
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
@@ -34,6 +35,7 @@ noise_factor = params.noise_factor
 c0 = params.c0
 c1 = params.c1
 c2 = params.c2
+pen = params.pen
 
 def cost_function_1(y, z):
     return z*(c0 - c1) + c1*y
@@ -41,11 +43,16 @@ def cost_function_1(y, z):
 def cost_function_2(y, z):
     return z*(c0 + c2) - c2*y
 
+def cost_function_3(y, z):
+    return z*(c0 + c2 + pen) - c2*y - pen*y - pen*200
+
 def cost_function(y, z):
-    if y-z >= 0:
+    if z <= y:
         return cost_function_1(y, z)
-    else:
+    elif  z > y and z <= y + 200:
         return cost_function_2(y, z)
+    else:
+        return cost_function_3(y, z)
     
 def cost_function_list(y_list, z_list):
     cost_list = []
@@ -54,52 +61,78 @@ def cost_function_list(y_list, z_list):
     return cost_list
         
 def SolOpt_1(y):
-    t_Model = LpProblem(name="small-problem", sense=LpMinimize)
-    z = LpVariable(name="z", lowBound=0)
+    t_Model = LpProblem(name="Lemonade-Problem", sense=LpMinimize)
+    z = LpVariable(name="z", lowBound=0, upBound=500)
 
-    t_Model+=(y-z>=0,"cstr1")
-    t_Model+=(z>=0,"cstr2")
+    t_Model+=(z-y<=0,"cstr1")
     
     obj_func = cost_function_1(y, z)
     t_Model += obj_func
     status = t_Model.solve()
     var=t_Model.variables()
-    return var[0].value(),t_Model.objective.value()
+    return var[0].value(),t_Model.objective.value(), status
 
 
 def SolOpt_2(y):
-    t_Model = LpProblem(name="small-problem", sense=LpMinimize)
-    z = LpVariable(name="z", lowBound=0)
+    t_Model = LpProblem(name="Lemonade-Problem", sense=LpMinimize)
+    z = LpVariable(name="z", lowBound=0, upBound=500)
 
     t_Model+=(z-y>=0,"cstr1")
-    t_Model+=(z>=0,"cstr2")
+    t_Model+=(z-y<=200,"cstr2")
     
     obj_func = cost_function_2(y, z)
     t_Model += obj_func
     status = t_Model.solve()
     var=t_Model.variables()
-    return var[0].value(),t_Model.objective.value()
+    return var[0].value(),t_Model.objective.value(), status
+
+
+def SolOpt_3(y):
+    t_Model = LpProblem(name="Lemonade-Problem", sense=LpMinimize)
+    z = LpVariable(name="z", lowBound=0, upBound=500)
+
+    t_Model+=(z-y>=200,"cstr1")
+    
+    obj_func = cost_function_3(y, z)
+    t_Model += obj_func
+    status = t_Model.solve()
+    var=t_Model.variables()
+    return var[0].value(),t_Model.objective.value(), status
+
 
 def SolOpt(y, i):
     Result_1 = SolOpt_1(y)
     Result_2 = SolOpt_2(y)
+    Result_3 = SolOpt_3(y)
     
-    if Result_1[1] < Result_2[1]:
+    f1 = Result_1[1]
+    f2 = Result_2[1]
+    f3 = Result_3[1]
+    if Result_1[2] == -1:
+        f1 = np.inf
+    if Result_2[2] == -1:
+        f2 = np.inf
+    if Result_3[2] == -1:
+        f3 = np.inf   
+        
+    if (f1 <= f2 and f1 <= f3):
         Result = Result_1
-    else:
+    elif (f2 <= f1 and f2 <= f3):
         Result = Result_2
-    
+    elif (f3 <=f1 and f3 <= f2):
+        Result = Result_3
+    else:
+        print('INFEASIBLE PROBLEM: STOPPING')
+
+        
+        
     return i, Result[0]
     
 
 def run_solver(data_test, model_type, results):
     
-    #pbar = None
-    #pbar = tqdm(total=len(data_test))
-    
     def collect_result(result):
         results.append(result)
-        #pbar.update()
     
     y_col = 'y'
     z_col = 'z_opt_from_y'  
@@ -259,14 +292,18 @@ def main():
                    'f_opt_from_y_pred_gbm',
                    'f_opt_from_y']  
 
+    cmodels = 'cornflowerblue'
+    ctruth = 'seagreen'
+    
     fig, ax = plt.subplots(figsize=(9, 5), dpi=120)
-    fig.suptitle('OBJECTIVE FUNCTION DISTRIBUTION x MODEL COMPLEXITY')
-    ax = seaborn.violinplot(
-        data=data_test[fobj_cols])
+    ax = sns.violinplot(
+        data=data_test[fobj_cols], 
+        palette=[cmodels,cmodels,cmodels,ctruth])
 
-    ax.set_xticklabels(['Linear','SVM','LGBM','Real Y'])
+    ax.set_xticklabels(['Linear','SVM','LGBM','Ground truth'])
     ax.set_xlabel('Model for predictions')
-    ax.set_ylabel('Objective Function f')
+    ax.set_ylabel('Objective Function')
+    ax.set_ylim([-1000, 30000])
     fig.savefig('fig_lemonade_result' + suffix_noise +'.png')
 
     df_result = pd.concat([
